@@ -4,7 +4,23 @@ A responsive React + TypeScript + Vite website for Birch Plumbing Inc., Rockford
 
 ## Current integration status
 
-The website and backend are implemented. **Live email delivery has not been configured or tested.** Without all five environment variables, the site displays a clear telephone fallback and disables online submissions. Tests use mocked external providers; they do not prove live inbox delivery. No customer information is stored in the browser or a database.
+The form's default destination is **jakub.ondreas@gmail.com**, as requested by the site owner. Set `BUSINESS_EMAIL` in Cloudflare to override it without editing source.
+
+**Live server-sent email has not been configured or tested.** When Resend/Turnstile settings are absent, the form remains usable via **Continue in email**: after browser validation it opens a draft containing all six fields in the visitor's email application. The visitor must press **Send** there. The site clearly states that opening a draft is not a successful submission, retains their entered details, and offers the recipient address and telephone number if no email app opens. This fallback requires a working email application and is not a replacement for configuring direct website delivery.
+
+When the required provider settings are present, the form automatically uses the secure `/api/estimate` backend instead, with an email-draft alternative if desired. Tests use mocked external providers; they do not prove live inbox delivery. No customer information is saved in browser storage or a database.
+
+### Enable direct website sending
+
+In **Cloudflare → Workers & Pages → your deployed app → Settings → Variables and Secrets**, add:
+
+- `RESEND_API_KEY`: your Resend sending API key (secret).
+- `BUSINESS_EMAIL`: `jakub.ondreas@gmail.com` (optional override; this is already the default).
+- `FROM_EMAIL`: a sender on a domain verified in your Resend account. Do **not** use the Gmail recipient as the sender unless the provider explicitly authorizes it.
+- `TURNSTILE_SITE_KEY`: your public Cloudflare Turnstile widget key.
+- `TURNSTILE_SECRET_KEY`: the matching Turnstile secret.
+
+Allowlist the final site hostname in Turnstile, redeploy, and send a real test request. Check the destination inbox and Resend delivery logs. Enter credentials in Cloudflare, **not in chat or frontend code**. No Gmail password, Gmail OAuth connection, or Gmail API is needed to receive these messages.
 
 ## Local development
 
@@ -15,7 +31,7 @@ npm ci
 npm run dev
 ```
 
-Vite provides frontend-only development on port 5173. API configuration is not available there, so the form intentionally shows the telephone fallback.
+Vite provides frontend-only development on port 5173. API configuration is not available there, so the form shows the telephone fallback. Use the full Wrangler runtime below to test email drafts and the backend.
 
 To run the full Cloudflare backend locally:
 
@@ -41,7 +57,7 @@ Alternatively, `npm run deploy` builds and deploys in one command. Merge this fi
 
 `worker/index.ts` routes `/api/config` and `/api/estimate` to the same backend used by Pages Functions. The `ASSETS` binding serves the site. `run_worker_first` ensures API requests cannot be swallowed by static asset/SPA fallback, and unknown API routes return JSON 404s. This is **not** a static-only workaround: the secure estimate backend is included.
 
-Set the five email/Turnstile variables below in **Workers & Pages → your Worker → Settings → Variables and Secrets**. `keep_vars = true` preserves dashboard-managed non-secret settings during CLI deployment; secrets remain server-side. A deployment may succeed before these are configured, but real online requests remain disabled until configuration is present. Existing Pages variables are not automatically copied to a Worker.
+Set the five email/Turnstile variables below in **Workers & Pages → your Worker → Settings → Variables and Secrets**. `keep_vars = true` preserves dashboard-managed non-secret settings during CLI deployment; secrets remain server-side. A deployment may succeed before these are configured, but direct website sending remains disabled until configuration is present; visitors can still create an email draft. Existing Pages variables are not automatically copied to a Worker.
 
 ```sh
 npm run build
@@ -68,7 +84,7 @@ The dry run verifies the Worker bundle and asset binding; it does not prove a re
 
 The repository includes a GitHub Actions workflow that runs tests and the production build. Cloudflare's native Git integration handles deployment; no deployment credentials are included in the workflow.
 
-For command-line Pages deployments, run `npm run pages:deploy -- --project-name YOUR_PAGES_PROJECT`. The script stages the site, Functions, and `wrangler.pages.toml` in an ignored `.wrangler/pages-project` directory with the standard config filename Pages requires. It does not overwrite the default Workers config or use the unsupported Pages `--config` flag. `pages:dev` also copies local `.dev.vars` into that ignored directory; deploy/check never copy it.
+For command-line Pages deployments, run `npm run pages:deploy -- --project-name YOUR_PAGES_PROJECT`. The script stages the site, Functions, shared `server/` helpers, and `wrangler.pages.toml` in an ignored `.wrangler/pages-project` directory with the standard config filename Pages requires. It does not overwrite the default Workers config or use the unsupported Pages `--config` flag. `pages:dev` also copies local `.dev.vars` into that ignored directory; deploy/check never copy it.
 
 ## Environment variables
 
@@ -77,12 +93,12 @@ Set these in **Workers & Pages → your Worker (or Pages project) → Settings �
 | Variable | Purpose |
 | --- | --- |
 | `RESEND_API_KEY` | Server-only Resend API key with permission to send email. |
-| `BUSINESS_EMAIL` | Destination inbox for inquiries. Change this setting, then redeploy, to change recipients without editing source. Use one valid email address. |
+| `BUSINESS_EMAIL` | Optional destination override for both server-sent inquiries and the public email-draft fallback. Defaults to `jakub.ondreas@gmail.com`. Change this setting, then redeploy, without editing source. Use one valid email address. |
 | `FROM_EMAIL` | Verified Resend sender, for example `Birch Plumbing Website <website@your-verified-domain.com>`. Must belong to a domain you control and verify. |
 | `TURNSTILE_SITE_KEY` | Public Cloudflare Turnstile widget key. Exposed by `/api/config` intentionally. |
 | `TURNSTILE_SECRET_KEY` | Server-only Turnstile verification secret. |
 
-`/api/config` exposes only the public site key and a configuration-ready boolean, never the business inbox, sender, or secret keys. “Configured” means values are present, not that they are valid or that live delivery has been tested.
+`/api/config` exposes the public site key, a configuration-ready boolean, and the public contact email used for the visitor-controlled draft fallback. The sender and secret keys are never exposed. “Configured” means values are present, not that they are valid or that live delivery has been tested.
 
 ### Set up Resend
 
@@ -122,13 +138,13 @@ npm run deploy:check
 npm run pages:check
 ```
 
-The automated suite covers valid requests, invalid fields/bodies, origin/method/content-type checks, oversized payloads, honeypot/timing/token checks, missing configuration, Turnstile failures and hostname/action mismatch, configurable recipient and reply-to behavior, provider rejection/network failure, public configuration secrecy, and Worker API/static-asset routing. CI also dry-runs the Workers deployment bundle and compiles the Pages Functions to catch deployment configuration regressions.
+The automated suite covers valid requests, invalid fields/bodies, origin/method/content-type checks, oversized payloads, honeypot/timing/token checks, missing configuration, Turnstile failures and hostname/action mismatch, configurable recipient and reply-to behavior, provider rejection/network failure, public configuration secrecy, configurable/default recipient selection, safely encoded email drafts, and Worker API/static-asset routing. CI also dry-runs the Workers deployment bundle and compiles the Pages Functions to catch deployment configuration regressions.
 
 ### Launch checklist
 
 - [ ] Business confirms wording and offered services, including residential work and general maintenance.
 - [ ] Business confirms free-estimate wording and the correct phone/address.
-- [ ] All five variables are configured in the intended deployment environment.
+- [ ] All provider settings are configured in the intended deployment environment; confirm `BUSINESS_EMAIL` or its default recipient.
 - [ ] Real Turnstile challenge succeeds on the final hostname.
 - [ ] A real form submission reaches the configured inbox; inspect Resend delivery logs and spam folder.
 - [ ] Replying to an inquiry addresses the customer correctly.

@@ -19,4 +19,10 @@ test('rejects failed, wrong-host, or wrong-action security verification', async 
 test('sends to configurable recipient and sets customer reply-to', async () => { const { fetcher, calls } = mockFetch(); const response = await handleEstimate(request(), env, fetcher); assert.equal(response.status, 200); assert.deepEqual(await response.json(), { success: true }); const payload = JSON.parse(String(calls[1].body)); assert.deepEqual(payload.to, [env.BUSINESS_EMAIL]); assert.equal(payload.from, env.FROM_EMAIL); assert.equal(payload.reply_to, valid.email); assert.ok(payload.text.includes(valid.description)); assert.equal(payload.html, undefined); });
 test('does not claim success when Resend rejects delivery', async () => { const { fetcher } = mockFetch(verifySuccess, 422); assert.equal((await handleEstimate(request(), env, fetcher)).status, 502); });
 test('handles provider network failures', async () => { const fetcher = (async () => { throw new Error('Network unavailable'); }) as typeof fetch; assert.equal((await handleEstimate(request(), env, fetcher)).status, 502); });
-test('public config does not expose secrets', async () => { const response = await onRequestGet({ env } as Parameters<typeof onRequestGet>[0]); assert.deepEqual(await response.json(), { siteKey: 'site-key', configured: true }); assert.equal(response.headers.get('Cache-Control'), 'no-store'); });
+test('public config does not expose secrets', async () => { const response = await onRequestGet({ env } as Parameters<typeof onRequestGet>[0]); assert.deepEqual(await response.json(), { siteKey: 'site-key', configured: true, contactEmail: 'office@example.com' }); assert.equal(response.headers.get('Cache-Control'), 'no-store'); });
+test('sends inquiries to the requested Gmail address when BUSINESS_EMAIL is unset', async () => {
+  const { fetcher, calls } = mockFetch();
+  const response = await handleEstimate(request(), { ...env, BUSINESS_EMAIL: '' }, fetcher);
+  assert.equal(response.status, 200);
+  assert.deepEqual(JSON.parse(String(calls[1].body)).to, ['jakub.ondreas@gmail.com']);
+});

@@ -15,6 +15,8 @@ if (!['dev', 'deploy', 'check'].includes(command)) {
 await mkdir(project, { recursive: true });
 await rm(path.join(project, 'functions'), { recursive: true, force: true });
 await cp(path.join(root, 'functions'), path.join(project, 'functions'), { recursive: true, force: true });
+await rm(path.join(project, 'server'), { recursive: true, force: true });
+await cp(path.join(root, 'server'), path.join(project, 'server'), { recursive: true, force: true });
 await cp(path.join(root, 'wrangler.pages.toml'), path.join(project, 'wrangler.toml'));
 if (command !== 'check') {
   // A fresh directory avoids publishing stale assets after a rebuild.

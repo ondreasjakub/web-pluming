@@ -6,3 +6,5 @@
 @media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}*,*::before,*::after{animation:none!important;transition:none!important}.reveal{opacity:1;transform:none}}
 
 .skip-link{position:fixed;left:15px;top:-100px;z-index:100;background:var(--navy);color:#fff;padding:14px 20px;border-radius:4px;font-size:13px}.skip-link:focus{top:12px}
+
+.email-alternative{border:0;background:none;color:var(--navy);font-size:10px;line-height:1.7;padding:12px 0 0;display:flex;gap:6px;align-items:center;text-align:left}.email-alternative:hover{text-decoration:underline}.form-message.draft{background:#eef3f6;color:#254957}.configuration-note a{overflow-wrap:anywhere}
