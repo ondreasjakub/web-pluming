@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { ArrowUpRight, ArrowRight, Phone, MapPin, Menu, X, Wrench, Droplets, House, Settings2, Check, MessageSquare, HeartHandshake, ShieldCheck, LoaderCircle, ChevronDown } from 'lucide-react';
 import './styles.css';
+import { buildEstimateEmail, type EstimateFields } from './estimate-email';
 
 const phone = '(815) 988-0719';
 const phoneLink = 'tel:+18159880719';
@@ -11,41 +12,58 @@ const services = [
   { title: 'Residential Plumbing', description: 'Practical plumbing solutions for the spaces and everyday routines that make a house a home.', icon: House },
   { title: 'General Maintenance', description: 'Give your plumbing the attention it needs. Talk with us about your maintenance needs.', icon: Settings2 },
 ];
+type FormConfig = { siteKey: string; configured: boolean; contactEmail: string };
 type Turnstile = { render: (el: HTMLElement, options: Record<string, unknown>) => string; reset: (id: string) => void; remove: (id: string) => void };
 declare global { interface Window { turnstile?: Turnstile } }
 function Brand({ light = false }: { light?: boolean }) { return <a className={`brand ${light ? 'brand-light' : ''}`} href="#home" aria-label="Birch Plumbing Inc. home"><span className="brand-icon">b<span /></span><span className="brand-name">birch<span>PLUMBING INC.</span></span></a>; }
 function EstimateForm() {
-  const [config, setConfig] = useState<{ siteKey: string; configured: boolean } | null>(null);
+  const [config, setConfig] = useState<FormConfig | null>(null);
   const [token, setToken] = useState('');
-  const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
+  const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error' | 'draft'>('idle');
   const [message, setMessage] = useState('');
   const container = useRef<HTMLDivElement>(null);
   const widget = useRef<string | null>(null);
   const started = useRef(Date.now());
   useEffect(() => {
     const controller = new AbortController();
-    fetch('/api/config', { signal: controller.signal }).then(r => { if (!r.ok || !r.headers.get('content-type')?.includes('application/json')) throw Error(); return r.json() as Promise<{ siteKey: string; configured: boolean }>; }).then(setConfig).catch(() => { if (!controller.signal.aborted) setConfig({ siteKey: '', configured: false }); });
+    fetch('/api/config', { signal: AbortSignal.any([controller.signal, AbortSignal.timeout(10000)]), cache: 'no-store' }).then(r => { if (!r.ok || !r.headers.get('content-type')?.includes('application/json')) throw Error(); return r.json() as Promise<FormConfig>; }).then(setConfig).catch(() => { if (!controller.signal.aborted) setConfig({ siteKey: '', configured: false, contactEmail: '' }); });
     return () => controller.abort();
   }, []);
   useEffect(() => {
     if (!config?.configured || !config.siteKey) return;
     let disposed = false;
-    const render = () => { if (!disposed && container.current && window.turnstile) widget.current = window.turnstile.render(container.current, { sitekey: config.siteKey, action: 'estimate', theme: 'light', size: container.current.clientWidth < 300 ? 'compact' : 'normal', callback: (t: string) => setToken(t), 'expired-callback': () => setToken(''), 'error-callback': () => { setToken(''); setMessage('Security check could not load. Please try again or call us.'); } }); };
+    const render = () => { if (!disposed && !widget.current && container.current && window.turnstile) widget.current = window.turnstile.render(container.current, { sitekey: config.siteKey, action: 'estimate', theme: 'light', size: container.current.clientWidth < 300 ? 'compact' : 'normal', callback: (t: string) => setToken(t), 'expired-callback': () => setToken(''), 'error-callback': () => { setToken(''); setStatus('error'); setMessage('Security check could not load. Please reload the page or use the email option below.'); } }); };
+    const scriptError = () => { if (!disposed) { setStatus('error'); setMessage('The security check could not load. Please reload or use the email option below.'); } };
     let script = document.querySelector<HTMLScriptElement>('#turnstile-script');
     if (window.turnstile) render();
-    else { if (!script) { script = document.createElement('script'); script.id = 'turnstile-script'; script.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit'; script.async = true; document.head.appendChild(script); } script.addEventListener('load', render); }
-    return () => { disposed = true; script?.removeEventListener('load', render); if (widget.current && window.turnstile) window.turnstile.remove(widget.current); };
+    else { if (!script) { script = document.createElement('script'); script.id = 'turnstile-script'; script.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit'; script.async = true; document.head.appendChild(script); } script.addEventListener('load', render); script.addEventListener('error', scriptError); }
+    return () => { disposed = true; script?.removeEventListener('load', render); script?.removeEventListener('error', scriptError); if (widget.current && window.turnstile) window.turnstile.remove(widget.current); widget.current = null; };
   }, [config]);
+  function openEmailDraft(form: HTMLFormElement) {
+    if (!config?.contactEmail || !form.reportValidity()) return;
+    const data = Object.fromEntries(new FormData(form));
+    if (data.website) { setStatus('error'); setMessage('Unable to accept this request. Please call us.'); return; }
+    const draft = buildEstimateEmail(config.contactEmail, data as EstimateFields);
+    window.location.href = draft;
+    setStatus('draft');
+    setMessage('Your email app should open with the completed request. Press Send there to email it. Nothing has been sent by this website, and your form details are still here.');
+  }
   async function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    if (!config?.configured) { setStatus('error'); setMessage('Online estimates are not configured yet. Please call (815) 988-0719 to discuss your project.'); return; }
+    if (status === 'loading') return;
+    if (!config?.configured) {
+      if (config?.contactEmail) openEmailDraft(e.currentTarget);
+      else { setStatus('error'); setMessage('The contact service is unavailable. Please reload the page or call (815) 988-0719.'); }
+      return;
+    }
     if (!token) { setStatus('error'); setMessage('Please complete the security check before sending.'); return; }
     const form = e.currentTarget;
     setStatus('loading'); setMessage('');
     try {
       const response = await fetch('/api/estimate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...Object.fromEntries(new FormData(form)), turnstileToken: token, startedAt: started.current }), signal: AbortSignal.timeout(20000) });
-      const result = await response.json() as { error?: string };
-      if (!response.ok) throw new Error(result.error || 'Your request could not be sent. Please try again or call us.');
+      if (!response.headers.get('content-type')?.includes('application/json')) throw new Error('The contact service is unavailable. Please call us or use the email option below.');
+      const result = await response.json() as { error?: string; success?: boolean };
+      if (!response.ok || result.success !== true) throw new Error(result.error || 'Your request could not be sent. Please try again or call us.');
       setStatus('success'); setMessage('Thank you! Your estimate request has been sent. We’ll be in touch to discuss your project.'); form.reset(); started.current = Date.now();
     } catch (error) { setStatus('error'); setMessage(error instanceof Error && error.name !== 'TimeoutError' ? error.message : 'We could not confirm your request. Please call us before submitting again.'); }
     finally { setToken(''); if (widget.current) window.turnstile?.reset(widget.current); }
@@ -53,17 +71,19 @@ function EstimateForm() {
   return <form className="estimate-form" onSubmit={submit}>
     <div className="form-heading"><span className="eyebrow">LET’S GET STARTED</span><h3>Tell us what you need.</h3><p>A little information helps us help you.</p></div>
     <div className="form-grid">
-      <label>Your name <span>*</span><input name="name" placeholder="Full name" autoComplete="name" required maxLength={100} /></label>
+      <label>Your name <span>*</span><input name="name" placeholder="Full name" autoComplete="name" required minLength={2} maxLength={100} /></label>
       <label>Email address <span>*</span><input name="email" type="email" placeholder="you@example.com" autoComplete="email" required maxLength={254} /></label>
-      <label>Phone number <span>*</span><input name="phone" type="tel" placeholder="(815) 555-0123" autoComplete="tel" required maxLength={30} /></label>
+      <label>Phone number <span>*</span><input name="phone" type="tel" placeholder="(815) 555-0123" autoComplete="tel" required minLength={7} maxLength={30} /></label>
       <label>Service needed <span>*</span><span className="select-wrap"><select name="service" required defaultValue=""><option value="" disabled>Select a service</option>{['Plumbing Repairs', 'Plumbing Installations', 'Residential Plumbing', 'General Plumbing Maintenance'].map(s => <option key={s}>{s}</option>)}</select><ChevronDown size={15}/></span></label>
-      <label className="full">Property address <span>*</span><input name="address" placeholder="Street address, city, ZIP code" autoComplete="street-address" required maxLength={300} /></label>
+      <label className="full">Property address <span>*</span><input name="address" placeholder="Street address, city, ZIP code" autoComplete="street-address" required minLength={5} maxLength={300} /></label>
       <label className="full">How can we help? <span>*</span><textarea name="description" placeholder="Tell us a little about your plumbing needs…" required minLength={10} maxLength={5000} rows={4} /></label>
     </div>
     <div className="honeypot" aria-hidden="true"><label>Leave this field blank<input name="website" tabIndex={-1} autoComplete="off" /></label></div>
     <div ref={container} className="turnstile" />
-    {config && !config.configured && <p className="configuration-note">Online requests are being set up. In the meantime, please <a href={phoneLink}>call {phone}</a> for an estimate.</p>}
-    <button className="button button-dark form-submit" type="submit" disabled={status === 'loading' || !config?.configured}>{status === 'loading' ? <><LoaderCircle className="spin" size={18}/> Sending your request…</> : <>Request a Free Estimate <ArrowUpRight size={19}/></>}</button>
+    {config && !config.configured && <p className="configuration-note">{config.contactEmail ? <>Direct website sending is not set up yet. Complete this form to create an email to <a href={`mailto:${config.contactEmail}`}>{config.contactEmail}</a>, then press Send in your email app.</> : <>The contact service is currently unavailable. Please <a href={phoneLink}>call {phone}</a> for an estimate.</>}</p>}
+    <button className="button button-dark form-submit" type="submit" disabled={status === 'loading' || !config || (!config.configured && !config.contactEmail)}>{status === 'loading' ? <><LoaderCircle className="spin" size={18}/> Sending your request…</> : <>{!config ? 'Checking contact options…' : config.configured ? 'Request a Free Estimate' : 'Continue in email'} <ArrowUpRight size={19}/></>}</button>
+    {config?.configured && config.contactEmail && <button className="email-alternative" type="button" disabled={status === 'loading'} onClick={event => { const form = event.currentTarget.form; if (form) openEmailDraft(form); }}>Prefer your email app? Create an email draft <ArrowUpRight size={14}/></button>}
+    {status === 'draft' && config?.contactEmail && <p className="configuration-note">No email app opened? Email <a href={`mailto:${config.contactEmail}`}>{config.contactEmail}</a> directly, or <a href={phoneLink}>call {phone}</a>.</p>}
     {message && <p className={`form-message ${status}`} role={status === 'error' ? 'alert' : 'status'}>{message}</p>}
     <p className="privacy-note"><ShieldCheck size={14}/> Your details are only used to respond to your inquiry.</p>
   </form>;

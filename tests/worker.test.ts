@@ -19,7 +19,7 @@ test('Worker routes config to the backend, not SPA assets', async () => {
   const { env, assetRequests } = environment();
   const response = await worker.fetch(new Request('https://birch.example/api/config'), env);
   assert.equal(response.status, 200);
-  assert.deepEqual(await response.json(), { siteKey: '', configured: false });
+  assert.deepEqual(await response.json(), { siteKey: '', configured: false, contactEmail: 'jakub.ondreas@gmail.com' });
   assert.equal(assetRequests.length, 0);
 });
 
@@ -27,7 +27,7 @@ test('Worker config exposes the public site key but not secrets', async () => {
   const { env } = environment();
   Object.assign(env, { RESEND_API_KEY: 'private-key', BUSINESS_EMAIL: 'office@example.com', FROM_EMAIL: 'website@example.com', TURNSTILE_SITE_KEY: 'public-site-key', TURNSTILE_SECRET_KEY: 'private-secret' });
   const response = await worker.fetch(new Request('https://birch.example/api/config'), env);
-  assert.deepEqual(await response.json(), { siteKey: 'public-site-key', configured: true });
+  assert.deepEqual(await response.json(), { siteKey: 'public-site-key', configured: true, contactEmail: 'office@example.com' });
 });
 
 test('Worker rejects unsupported config methods', async () => {

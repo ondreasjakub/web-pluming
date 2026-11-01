@@ -1,3 +1,4 @@
+import { getBusinessEmail, isValidBusinessEmail } from '../../server/contact';
 export interface Env {
   RESEND_API_KEY: string;
   BUSINESS_EMAIL: string;
@@ -41,7 +42,7 @@ export async function handleEstimate(request: Request, env: Env, fetcher: typeof
   if (data.website) return json({ error: 'Unable to accept this submission. Please call us.' }, 400);
   const result = validateSubmission(data);
   if (result.error) return json({ error: result.error }, 400);
-  if (!env.RESEND_API_KEY || !env.BUSINESS_EMAIL || !env.FROM_EMAIL || !env.TURNSTILE_SECRET_KEY || !env.TURNSTILE_SITE_KEY) return json({ error: 'Online requests are not configured yet. Please call (815) 988-0719.' }, 503);
+  if (!env.RESEND_API_KEY || !isValidBusinessEmail(env) || !env.FROM_EMAIL || !env.TURNSTILE_SECRET_KEY || !env.TURNSTILE_SITE_KEY) return json({ error: 'Online requests are not configured yet. Please call (815) 988-0719.' }, 503);
   if (typeof data.startedAt !== 'number' || Date.now() - data.startedAt < 3000 || Date.now() - data.startedAt > 86400000) return json({ error: 'Please take a moment to review the form, or reload the page and try again.' }, 400);
   if (typeof data.turnstileToken !== 'string' || !data.turnstileToken || data.turnstileToken.length > 2048) return json({ error: 'Please complete the security check.' }, 400);
   try {
@@ -54,7 +55,7 @@ export async function handleEstimate(request: Request, env: Env, fetcher: typeof
     const d = result.data!;
     const email = await fetcher('https://api.resend.com/emails', {
       method: 'POST', headers: { Authorization: `Bearer ${env.RESEND_API_KEY}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ from: env.FROM_EMAIL, to: [env.BUSINESS_EMAIL], reply_to: d.email, subject: `Website estimate request: ${d.service}`, text: `New estimate request from the Birch Plumbing website\n\nName: ${d.name}\nEmail: ${d.email}\nPhone: ${d.phone}\nService: ${d.service}\nProperty address: ${d.address}\n\nDescription:\n${d.description}\n\nPlease reply directly to the customer to follow up.` }),
+      body: JSON.stringify({ from: env.FROM_EMAIL, to: [getBusinessEmail(env)], reply_to: d.email, subject: `Website estimate request: ${d.service}`, text: `New estimate request from the Birch Plumbing website\n\nName: ${d.name}\nEmail: ${d.email}\nPhone: ${d.phone}\nService: ${d.service}\nProperty address: ${d.address}\n\nDescription:\n${d.description}\n\nPlease reply directly to the customer to follow up.` }),
       signal: AbortSignal.timeout(10000),
     });
     if (!email.ok) return json({ error: 'We could not send your request. Please call (815) 988-0719 or try again later.' }, 502);

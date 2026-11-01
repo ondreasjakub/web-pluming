@@ -24,6 +24,7 @@
     "functions",
     "tests",
     "vite.config.ts",
-    "worker"
+    "worker",
+    "server"
   ]
 }

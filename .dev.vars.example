@@ -1,6 +1,6 @@
 # Copy to .dev.vars for local Wrangler testing. NEVER commit real values.
 RESEND_API_KEY=
-BUSINESS_EMAIL=
+BUSINESS_EMAIL=jakub.ondreas@gmail.com
 FROM_EMAIL=
 TURNSTILE_SITE_KEY=
 TURNSTILE_SECRET_KEY=
