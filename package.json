@@ -7,8 +7,13 @@
     "dev": "vite --host 0.0.0.0",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview --host 0.0.0.0",
-    "pages:dev": "npm run build && wrangler pages dev dist --ip 0.0.0.0",
-    "test": "tsx --test tests/*.test.ts"
+    "pages:dev": "npm run build && node scripts/pages.mjs dev --ip 0.0.0.0",
+    "test": "tsx --test tests/*.test.ts",
+    "worker:dev": "npm run build && wrangler dev --ip 0.0.0.0",
+    "deploy": "npm run build && wrangler deploy",
+    "deploy:check": "wrangler deploy --dry-run",
+    "pages:deploy": "npm run build && node scripts/pages.mjs deploy",
+    "pages:check": "node scripts/pages.mjs check"
   },
   "dependencies": {
     "lucide-react": "^0.468.0",
